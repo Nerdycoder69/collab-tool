@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Workspace from '../models/Workspace.js';
+import User from '../models/User.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = Router();
@@ -71,30 +72,35 @@ router.patch(
   }
 );
 
-// POST /api/workspaces/:workspaceId/members — invite a member (owner only)
+// POST /api/workspaces/:workspaceId/members — invite a member by email (owner/editor)
 router.post(
   '/:workspaceId/members',
-  authorize('owner'),
+  authorize('owner', 'editor'),
   async (req, res) => {
     try {
-      const { userId, role } = req.body;
+      const { email, role } = req.body;
 
-      if (!userId || !role) {
-        return res.status(400).json({ error: 'userId and role are required' });
+      if (!email || !role) {
+        return res.status(400).json({ error: 'email and role are required' });
       }
 
       if (!['editor', 'viewer'].includes(role)) {
         return res.status(400).json({ error: 'Role must be editor or viewer' });
       }
 
+      const invitedUser = await User.findOne({ email: email.toLowerCase().trim() });
+      if (!invitedUser) {
+        return res.status(404).json({ error: 'No user found with that email' });
+      }
+
       const alreadyMember = req.workspace.members.some(
-        (m) => m.user.toString() === userId
+        (m) => m.user.toString() === invitedUser._id.toString()
       );
       if (alreadyMember) {
         return res.status(409).json({ error: 'User is already a member' });
       }
 
-      req.workspace.members.push({ user: userId, role });
+      req.workspace.members.push({ user: invitedUser._id, role });
       await req.workspace.save();
       await req.workspace.populate('members.user', 'name email avatar');
       res.json({ workspace: req.workspace });

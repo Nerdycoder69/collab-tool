@@ -10,6 +10,7 @@ import authRoutes from './routes/auth.js';
 import workspaceRoutes from './routes/workspaces.js';
 import boardRoutes from './routes/boards.js';
 import cardRoutes from './routes/cards.js';
+import chatRoutes from './routes/chat.js';
 import { setupSocket } from './socket/index.js';
 
 const app = express();
@@ -39,6 +40,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/workspaces', boardRoutes);
 app.use('/api/workspaces', cardRoutes);
+app.use('/api/workspaces', chatRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

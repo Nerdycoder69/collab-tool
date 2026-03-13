@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
+import Message from '../models/Message.js';
 
 // Track online users per workspace: Map<workspaceId, Set<{socketId, user}>>
 const workspacePresence = new Map();
@@ -97,6 +98,36 @@ export function setupSocket(io) {
 
     socket.on('board:updated', (data) => {
       socket.to(`board:${data.boardId}`).emit('board:updated', data);
+    });
+
+    // ── Chat messages ──
+    socket.on('chat:send', async (data) => {
+      try {
+        const { boardId, text } = data;
+        if (!boardId || !text?.trim()) return;
+
+        const message = await Message.create({
+          board: boardId,
+          author: socket.user._id,
+          text: text.trim(),
+        });
+
+        await message.populate('author', 'name email avatar');
+
+        // Broadcast to everyone in the board room (including sender)
+        io.to(`board:${boardId}`).emit('chat:message', { message });
+      } catch (err) {
+        socket.emit('error', { message: err.message });
+      }
+    });
+
+    socket.on('chat:typing', (data) => {
+      socket.to(`board:${data.boardId}`).emit('chat:typing', {
+        user: {
+          _id: socket.user._id,
+          name: socket.user.name,
+        },
+      });
     });
 
     // ── Cursor / typing indicators ──

@@ -82,4 +82,19 @@ export const api = {
       `/workspaces/${workspaceId}/boards/${boardId}/cards/${cardId}/comments`,
       { method: 'POST', body }
     ),
+
+  // Chat
+  getMessages: (workspaceId, boardId, before) =>
+    request(
+      `/workspaces/${workspaceId}/boards/${boardId}/messages${before ? `?before=${before}` : ''}`
+    ),
+  sendMessage: (workspaceId, boardId, body) =>
+    request(`/workspaces/${workspaceId}/boards/${boardId}/messages`, {
+      method: 'POST',
+      body,
+    }),
+
+  // Invite by email
+  inviteMember: (workspaceId, body) =>
+    request(`/workspaces/${workspaceId}/members`, { method: 'POST', body }),
 };

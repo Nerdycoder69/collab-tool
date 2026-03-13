@@ -5,6 +5,8 @@ import { useSocket } from '../hooks/useSocket.js';
 import { useAuthStore } from '../store/authStore.js';
 import Column from '../components/Column.jsx';
 import OnlineUsers from '../components/OnlineUsers.jsx';
+import ChatPanel from '../components/ChatPanel.jsx';
+import InviteModal from '../components/InviteModal.jsx';
 
 export default function BoardPage() {
   const { workspaceId, boardId } = useParams();
@@ -26,6 +28,8 @@ export default function BoardPage() {
 
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColTitle, setNewColTitle] = useState('');
+  const [chatOpen, setChatOpen] = useState(true);
+  const [showInvite, setShowInvite] = useState(false);
 
   useEffect(() => {
     fetchBoard(workspaceId, boardId);
@@ -108,78 +112,106 @@ export default function BoardPage() {
           </Link>
           <h2 style={{ fontSize: '1.25rem' }}>{currentBoard.title}</h2>
         </div>
-        <OnlineUsers users={onlineUsers} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <OnlineUsers users={onlineUsers} />
+          <button className="btn-primary" onClick={() => setShowInvite(true)} style={{ fontSize: '0.75rem' }}>
+            Invite
+          </button>
+          <button
+            className="btn-ghost"
+            onClick={() => setChatOpen(!chatOpen)}
+            style={{ fontSize: '0.75rem' }}
+          >
+            {chatOpen ? 'Hide Chat' : 'Show Chat'}
+          </button>
+        </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: '1rem',
-          overflowX: 'auto',
-          paddingBottom: '1rem',
-          alignItems: 'flex-start',
-        }}
-      >
-        {sortedColumns.map((column) => (
-          <Column
-            key={column._id}
-            column={column}
-            cards={cards
-              .filter((c) => c.column?.toString() === column._id?.toString())
-              .sort((a, b) => a.order - b.order)}
-            workspaceId={workspaceId}
-            boardId={boardId}
-          />
-        ))}
+      {showInvite && (
+        <InviteModal
+          workspaceId={workspaceId}
+          onClose={() => setShowInvite(false)}
+        />
+      )}
 
-        {/* Add column button */}
-        <div style={{ minWidth: '280px', flexShrink: 0 }}>
-          {addingColumn ? (
-            <form
-              onSubmit={handleAddColumn}
-              style={{
-                background: 'var(--bg-secondary)',
-                padding: '0.75rem',
-                borderRadius: 'var(--radius)',
-              }}
-            >
-              <input
-                placeholder="Column title"
-                value={newColTitle}
-                onChange={(e) => setNewColTitle(e.target.value)}
-                autoFocus
-                style={{ marginBottom: '0.5rem' }}
-              />
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn-primary" type="submit">
-                  Add
-                </button>
-                <button
-                  className="btn-ghost"
-                  type="button"
-                  onClick={() => setAddingColumn(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          ) : (
-            <button
-              className="btn-ghost"
-              onClick={() => setAddingColumn(true)}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '0.75rem',
-                background: 'var(--bg-secondary)',
-                borderRadius: 'var(--radius)',
-                opacity: 0.7,
-              }}
-            >
-              + Add Column
-            </button>
-          )}
+      <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
+        {/* Board columns */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            overflowX: 'auto',
+            paddingBottom: '1rem',
+            alignItems: 'flex-start',
+            flex: 1,
+          }}
+        >
+          {sortedColumns.map((column) => (
+            <Column
+              key={column._id}
+              column={column}
+              cards={cards
+                .filter((c) => c.column?.toString() === column._id?.toString())
+                .sort((a, b) => a.order - b.order)}
+              workspaceId={workspaceId}
+              boardId={boardId}
+            />
+          ))}
+
+          {/* Add column button */}
+          <div style={{ minWidth: '280px', flexShrink: 0 }}>
+            {addingColumn ? (
+              <form
+                onSubmit={handleAddColumn}
+                style={{
+                  background: 'var(--bg-secondary)',
+                  padding: '0.75rem',
+                  borderRadius: 'var(--radius)',
+                }}
+              >
+                <input
+                  placeholder="Column title"
+                  value={newColTitle}
+                  onChange={(e) => setNewColTitle(e.target.value)}
+                  autoFocus
+                  style={{ marginBottom: '0.5rem' }}
+                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn-primary" type="submit">
+                    Add
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    type="button"
+                    onClick={() => setAddingColumn(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button
+                className="btn-ghost"
+                onClick={() => setAddingColumn(true)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '0.75rem',
+                  background: 'var(--bg-secondary)',
+                  borderRadius: 'var(--radius)',
+                  opacity: 0.7,
+                }}
+              >
+                + Add Column
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Chat panel */}
+        {chatOpen && (
+          <ChatPanel workspaceId={workspaceId} boardId={boardId} />
+        )}
       </div>
     </div>
   );
