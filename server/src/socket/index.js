@@ -79,10 +79,27 @@ export function setupSocket(io) {
     // ── Join a board room (for card-level real-time updates) ──
     socket.on('board:join', (boardId) => {
       socket.join(`board:${boardId}`);
+      // Broadcast that this user is viewing the board
+      socket.to(`board:${boardId}`).emit('presence:viewing', {
+        user: { _id: socket.user._id, name: socket.user.name, avatar: socket.user.avatar },
+        viewing: { type: 'board', id: boardId },
+      });
     });
 
     socket.on('board:leave', (boardId) => {
       socket.leave(`board:${boardId}`);
+      socket.to(`board:${boardId}`).emit('presence:left', {
+        user: { _id: socket.user._id },
+      });
+    });
+
+    // ── Presence: what the user is looking at ──
+    socket.on('presence:focus', (data) => {
+      // data: { boardId, viewing: { type: 'card'|'column'|'board', id, title } }
+      socket.to(`board:${data.boardId}`).emit('presence:viewing', {
+        user: { _id: socket.user._id, name: socket.user.name, avatar: socket.user.avatar },
+        viewing: data.viewing,
+      });
     });
 
     // ── Card events — broadcast to all other users on the board ──

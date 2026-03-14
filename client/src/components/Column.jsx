@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useBoardStore } from '../store/boardStore.js';
+import { useUndoStore, createCardCommand, createMoveCardCommand } from '../store/undoStore.js';
 import { getSocket } from '../hooks/useSocket.js';
+import { api } from '../utils/api.js';
 import CardItem from './CardItem.jsx';
 
 export default function Column({ column, cards, workspaceId, boardId }) {
   const { createCard } = useBoardStore();
+  const { push } = useUndoStore();
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -13,17 +16,19 @@ export default function Column({ column, cards, workspaceId, boardId }) {
     e.preventDefault();
     if (!title.trim()) return;
 
-    try {
-      const card = await createCard(workspaceId, boardId, {
-        title: title.trim(),
-        column: column._id,
-      });
+    const cardData = { title: title.trim(), column: column._id };
+    const command = createCardCommand({
+      api,
+      workspaceId,
+      boardId,
+      cardData,
+      boardStore: useBoardStore,
+      socket: getSocket(),
+    });
 
-      // Broadcast via socket
-      const socket = getSocket();
-      if (socket) {
-        socket.emit('card:created', { boardId, card });
-      }
+    try {
+      await command.execute();
+      push(command);
     } catch (err) {
       console.error(err);
     }
@@ -48,16 +53,29 @@ export default function Column({ column, cards, workspaceId, boardId }) {
     const cardId = e.dataTransfer.getData('text/plain');
     if (!cardId) return;
 
-    const { moveCard, cards: allCards } = useBoardStore.getState();
+    const { cards: allCards } = useBoardStore.getState();
     const movingCard = allCards.find((c) => c._id === cardId);
-    const fromColumn = movingCard?.column;
-    try {
-      const card = await moveCard(workspaceId, boardId, cardId, column._id, cards.length);
+    if (!movingCard) return;
 
-      const socket = getSocket();
-      if (socket) {
-        socket.emit('card:moved', { boardId, card, fromColumn });
-      }
+    const fromColumn = movingCard.column;
+    const fromOrder = movingCard.order;
+
+    const command = createMoveCardCommand({
+      api,
+      workspaceId,
+      boardId,
+      cardId,
+      fromColumn,
+      fromOrder,
+      toColumn: column._id,
+      toOrder: cards.length,
+      boardStore: useBoardStore,
+      socket: getSocket(),
+    });
+
+    try {
+      await command.execute();
+      push(command);
     } catch (err) {
       console.error(err);
     }
@@ -76,7 +94,7 @@ export default function Column({ column, cards, workspaceId, boardId }) {
         padding: '0.75rem',
         display: 'flex',
         flexDirection: 'column',
-        maxHeight: 'calc(100vh - 180px)',
+        maxHeight: 'calc(100vh - 220px)',
         transition: 'background 0.15s',
       }}
     >

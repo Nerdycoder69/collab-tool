@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useBoardStore } from '../store/boardStore.js';
+import { useUndoStore } from '../store/undoStore.js';
 import { useSocket } from '../hooks/useSocket.js';
 import { useAuthStore } from '../store/authStore.js';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
@@ -28,6 +29,8 @@ export default function BoardPage() {
     loading,
   } = useBoardStore();
 
+  const { undo, redo, canUndo, canRedo, clear: clearUndo } = useUndoStore();
+
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColTitle, setNewColTitle] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
@@ -35,6 +38,7 @@ export default function BoardPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [filterLabel, setFilterLabel] = useState('');
+  const [viewingStatus, setViewingStatus] = useState({});
 
   useEffect(() => {
     fetchBoard(workspaceId, boardId);
@@ -46,8 +50,9 @@ export default function BoardPage() {
       emit('workspace:leave', workspaceId);
       emit('board:leave', boardId);
       clearBoard();
+      clearUndo();
     };
-  }, [workspaceId, boardId, fetchBoard, emit, clearBoard]);
+  }, [workspaceId, boardId, fetchBoard, emit, clearBoard, clearUndo]);
 
   // Listen for real-time events
   useEffect(() => {
@@ -57,6 +62,19 @@ export default function BoardPage() {
       on('card:moved', handleRemoteCardMoved),
       on('card:deleted', handleRemoteCardDeleted),
       on('workspace:presence', (data) => setOnlineUsers(data.users)),
+      on('presence:viewing', (data) => {
+        setViewingStatus((prev) => ({
+          ...prev,
+          [data.user._id]: data.viewing,
+        }));
+      }),
+      on('presence:left', (data) => {
+        setViewingStatus((prev) => {
+          const next = { ...prev };
+          delete next[data.user._id];
+          return next;
+        });
+      }),
     ];
 
     return () => unsubs.forEach((unsub) => unsub && unsub());
@@ -66,11 +84,13 @@ export default function BoardPage() {
   const shortcutHandlers = useMemo(() => ({
     'toggle-chat': () => setChatOpen((p) => !p),
     'toggle-activity': () => setActivityOpen((p) => !p),
+    undo,
+    redo,
     close: () => {
       setShowInvite(false);
       setAddingColumn(false);
     },
-  }), []);
+  }), [undo, redo]);
 
   useKeyboardShortcuts(shortcutHandlers);
 
@@ -103,7 +123,6 @@ export default function BoardPage() {
     if (!newColTitle.trim() || !currentBoard) return;
 
     const newCol = {
-      _id: Date.now().toString(),
       title: newColTitle.trim(),
       order: currentBoard.columns.length,
     };
@@ -151,9 +170,31 @@ export default function BoardPage() {
             &larr; Back
           </Link>
           <h2 style={{ fontSize: '1.25rem' }}>{currentBoard.title}</h2>
+
+          {/* Undo/Redo buttons */}
+          <div style={{ display: 'flex', gap: '0.25rem' }}>
+            <button
+              className="btn-ghost"
+              onClick={undo}
+              disabled={!canUndo()}
+              title="Undo (Ctrl+Z)"
+              style={{ fontSize: '0.875rem', padding: '0.25rem 0.5rem' }}
+            >
+              {'\u21A9'}
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={redo}
+              disabled={!canRedo()}
+              title="Redo (Ctrl+Shift+Z)"
+              style={{ fontSize: '0.875rem', padding: '0.25rem 0.5rem' }}
+            >
+              {'\u21AA'}
+            </button>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <OnlineUsers users={onlineUsers} />
+          <OnlineUsers users={onlineUsers} viewingStatus={viewingStatus} />
           <button className="btn-primary" onClick={() => setShowInvite(true)} style={{ fontSize: '0.75rem' }}>
             Invite
           </button>

@@ -43,6 +43,8 @@ export const api = {
 
   // Boards
   getBoards: (workspaceId) => request(`/workspaces/${workspaceId}/boards`),
+  getBoardTemplates: (workspaceId) =>
+    request(`/workspaces/${workspaceId}/boards/templates`),
   createBoard: (workspaceId, body) =>
     request(`/workspaces/${workspaceId}/boards`, { method: 'POST', body }),
   getBoard: (workspaceId, boardId) =>

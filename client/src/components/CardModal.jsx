@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useBoardStore } from '../store/boardStore.js';
+import { useUndoStore, createUpdateCardCommand, createDeleteCardCommand } from '../store/undoStore.js';
 import { getSocket } from '../hooks/useSocket.js';
 import { api } from '../utils/api.js';
 
 export default function CardModal({ card, workspaceId, boardId, onClose }) {
   const { updateCard, deleteCard } = useBoardStore();
+  const { push } = useUndoStore();
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description || '');
   const [comment, setComment] = useState('');
@@ -33,16 +35,24 @@ export default function CardModal({ card, workspaceId, boardId, onClose }) {
   const handleSave = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    try {
-      const updated = await updateCard(workspaceId, boardId, card._id, {
-        title: title.trim(),
-        description: description.trim(),
-      });
 
-      const socket = getSocket();
-      if (socket) {
-        socket.emit('card:updated', { boardId, card: updated });
-      }
+    const prevData = { title: card.title, description: card.description || '' };
+    const newData = { title: title.trim(), description: description.trim() };
+
+    const command = createUpdateCardCommand({
+      api,
+      workspaceId,
+      boardId,
+      cardId: card._id,
+      prevData,
+      newData,
+      boardStore: useBoardStore,
+      socket: getSocket(),
+    });
+
+    try {
+      await command.execute();
+      push(command);
       onClose();
     } catch (err) {
       console.error(err);
@@ -52,12 +62,18 @@ export default function CardModal({ card, workspaceId, boardId, onClose }) {
   };
 
   const handleDelete = async () => {
+    const command = createDeleteCardCommand({
+      api,
+      workspaceId,
+      boardId,
+      card,
+      boardStore: useBoardStore,
+      socket: getSocket(),
+    });
+
     try {
-      await deleteCard(workspaceId, boardId, card._id);
-      const socket = getSocket();
-      if (socket) {
-        socket.emit('card:deleted', { boardId, cardId: card._id, cardTitle: card.title });
-      }
+      await command.execute();
+      push(command);
       onClose();
     } catch (err) {
       console.error(err);

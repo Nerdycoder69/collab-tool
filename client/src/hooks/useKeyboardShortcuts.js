@@ -5,6 +5,8 @@ const SHORTCUTS = [
   { key: 'n', description: 'New card (on board)', action: 'new-card' },
   { key: 'a', description: 'Toggle activity panel', action: 'toggle-activity' },
   { key: 'c', description: 'Toggle chat panel', action: 'toggle-chat' },
+  { key: 'Ctrl+Z', description: 'Undo last action', action: 'undo' },
+  { key: 'Ctrl+Shift+Z', description: 'Redo last action', action: 'redo' },
   { key: '?', description: 'Show keyboard shortcuts', action: 'show-help' },
   { key: 'Escape', description: 'Close modal / panel', action: 'close' },
 ];
@@ -14,10 +16,24 @@ export { SHORTCUTS };
 export function useKeyboardShortcuts(handlers = {}) {
   const handleKeyDown = useCallback(
     (e) => {
-      // Don't trigger shortcuts when typing in inputs
+      // Handle Ctrl/Cmd shortcuts first (these work even in inputs)
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          handlers.undo?.();
+          return;
+        }
+        if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+          e.preventDefault();
+          handlers.redo?.();
+          return;
+        }
+        return;
+      }
+
+      // Don't trigger letter shortcuts when typing in inputs
       const tag = e.target.tagName.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') {
-        // Only handle Escape in inputs
         if (e.key === 'Escape' && handlers.close) {
           e.target.blur();
           handlers.close();
@@ -25,8 +41,7 @@ export function useKeyboardShortcuts(handlers = {}) {
         return;
       }
 
-      // Don't trigger with modifiers (except shift for ?)
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.altKey) return;
 
       switch (e.key) {
         case '/':
