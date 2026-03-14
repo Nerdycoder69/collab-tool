@@ -206,5 +206,5 @@ export const useBoardStore = create((set, get) => ({
   setOnlineUsers: (users) => set({ onlineUsers: users }),
 
   clearBoard: () =>
-    set({ currentBoard: null, cards: [], onlineUsers: [] }),
+    set({ currentBoard: null, cards: [], onlineUsers: [], loading: false }),
 }));

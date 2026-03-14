@@ -97,4 +97,31 @@ export const api = {
   // Invite by email
   inviteMember: (workspaceId, body) =>
     request(`/workspaces/${workspaceId}/members`, { method: 'POST', body }),
+
+  // Activity
+  getActivities: (workspaceId, boardId, before) => {
+    let url = `/workspaces/${workspaceId}/activity?limit=50`;
+    if (boardId) url += `&boardId=${boardId}`;
+    if (before) url += `&before=${before}`;
+    return request(url);
+  },
+
+  // Notifications
+  getNotifications: (unreadOnly) =>
+    request(`/notifications${unreadOnly ? '?unreadOnly=true' : ''}`),
+  markNotificationRead: (id) =>
+    request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllNotificationsRead: () =>
+    request('/notifications/read-all', { method: 'PATCH' }),
+
+  // Search
+  search: (q, workspaceId) => {
+    let url = `/search?q=${encodeURIComponent(q)}`;
+    if (workspaceId) url += `&workspaceId=${workspaceId}`;
+    return request(url);
+  },
+
+  // Members lookup
+  getWorkspaceMembers: (workspaceId) =>
+    request(`/workspaces/${workspaceId}`),
 };

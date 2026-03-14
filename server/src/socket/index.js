@@ -1,10 +1,16 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
+import Board from '../models/Board.js';
 import Message from '../models/Message.js';
+import Activity from '../models/Activity.js';
+import Notification from '../models/Notification.js';
 
-// Track online users per workspace: Map<workspaceId, Set<{socketId, user}>>
+// Track online users per workspace: Map<workspaceId, Map<socketId, user>>
 const workspacePresence = new Map();
+
+// Track which user is on which socket for notifications
+const userSockets = new Map(); // userId -> Set<socketId>
 
 export function setupSocket(io) {
   // Authenticate socket connections via JWT
@@ -27,6 +33,13 @@ export function setupSocket(io) {
 
   io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.user.name} (${socket.id})`);
+
+    // Track user socket for notifications
+    const userId = socket.user._id.toString();
+    if (!userSockets.has(userId)) {
+      userSockets.set(userId, new Set());
+    }
+    userSockets.get(userId).add(socket.id);
 
     // ── Join a workspace room ──
     socket.on('workspace:join', async (workspaceId) => {
@@ -73,20 +86,103 @@ export function setupSocket(io) {
     });
 
     // ── Card events — broadcast to all other users on the board ──
-    socket.on('card:created', (data) => {
+    socket.on('card:created', async (data) => {
       socket.to(`board:${data.boardId}`).emit('card:created', data);
+
+      // Log activity
+      try {
+        const board = await Board.findById(data.boardId);
+        if (board) {
+          const activity = await Activity.create({
+            workspace: board.workspace,
+            board: board._id,
+            card: data.card?._id,
+            user: socket.user._id,
+            action: 'card:created',
+            details: { cardTitle: data.card?.title, boardTitle: board.title },
+          });
+          await activity.populate('user', 'name email avatar');
+          io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+        }
+      } catch (err) {
+        console.error('Activity log error:', err.message);
+      }
     });
 
-    socket.on('card:updated', (data) => {
+    socket.on('card:updated', async (data) => {
       socket.to(`board:${data.boardId}`).emit('card:updated', data);
+
+      try {
+        const board = await Board.findById(data.boardId);
+        if (board) {
+          const activity = await Activity.create({
+            workspace: board.workspace,
+            board: board._id,
+            card: data.card?._id,
+            user: socket.user._id,
+            action: 'card:updated',
+            details: { cardTitle: data.card?.title, boardTitle: board.title },
+          });
+          await activity.populate('user', 'name email avatar');
+          io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+        }
+      } catch (err) {
+        console.error('Activity log error:', err.message);
+      }
     });
 
-    socket.on('card:moved', (data) => {
+    socket.on('card:moved', async (data) => {
       socket.to(`board:${data.boardId}`).emit('card:moved', data);
+
+      try {
+        const board = await Board.findById(data.boardId);
+        if (board) {
+          const fromCol = board.columns.find(
+            (c) => c._id.toString() === data.fromColumn?.toString()
+          );
+          const toCol = board.columns.find(
+            (c) => c._id.toString() === data.card?.column?.toString()
+          );
+          const activity = await Activity.create({
+            workspace: board.workspace,
+            board: board._id,
+            card: data.card?._id,
+            user: socket.user._id,
+            action: 'card:moved',
+            details: {
+              cardTitle: data.card?.title,
+              fromColumn: fromCol?.title || 'Unknown',
+              toColumn: toCol?.title || 'Unknown',
+              boardTitle: board.title,
+            },
+          });
+          await activity.populate('user', 'name email avatar');
+          io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+        }
+      } catch (err) {
+        console.error('Activity log error:', err.message);
+      }
     });
 
-    socket.on('card:deleted', (data) => {
+    socket.on('card:deleted', async (data) => {
       socket.to(`board:${data.boardId}`).emit('card:deleted', data);
+
+      try {
+        const board = await Board.findById(data.boardId);
+        if (board) {
+          const activity = await Activity.create({
+            workspace: board.workspace,
+            board: board._id,
+            user: socket.user._id,
+            action: 'card:deleted',
+            details: { cardTitle: data.cardTitle || 'Untitled', boardTitle: board.title },
+          });
+          await activity.populate('user', 'name email avatar');
+          io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+        }
+      } catch (err) {
+        console.error('Activity log error:', err.message);
+      }
     });
 
     // ── Board events ──
@@ -130,6 +226,68 @@ export function setupSocket(io) {
       });
     });
 
+    // ── Comment with @mentions ──
+    socket.on('card:commented', async (data) => {
+      const { boardId, cardId, comment, mentions } = data;
+
+      try {
+        const board = await Board.findById(boardId);
+        if (!board) return;
+
+        // Log activity
+        const activity = await Activity.create({
+          workspace: board.workspace,
+          board: board._id,
+          card: cardId,
+          user: socket.user._id,
+          action: 'card:commented',
+          details: {
+            cardTitle: data.cardTitle || '',
+            commentText: comment?.text?.substring(0, 100),
+            boardTitle: board.title,
+          },
+        });
+        await activity.populate('user', 'name email avatar');
+        io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+
+        // Broadcast card update to board
+        socket.to(`board:${boardId}`).emit('card:updated', data);
+
+        // Create notifications for @mentions
+        if (mentions && mentions.length > 0) {
+          const mentionedUsers = await User.find({
+            name: { $in: mentions },
+          });
+
+          for (const mentionedUser of mentionedUsers) {
+            if (mentionedUser._id.toString() === socket.user._id.toString()) continue;
+
+            const notification = await Notification.create({
+              recipient: mentionedUser._id,
+              sender: socket.user._id,
+              type: 'mention',
+              workspace: board.workspace,
+              board: board._id,
+              card: cardId,
+              message: `${socket.user.name} mentioned you in a comment on "${data.cardTitle || 'a card'}"`,
+            });
+
+            await notification.populate('sender', 'name email avatar');
+
+            // Send real-time notification to mentioned user
+            const targetSockets = userSockets.get(mentionedUser._id.toString());
+            if (targetSockets) {
+              for (const sid of targetSockets) {
+                io.to(sid).emit('notification:new', { notification });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Comment activity error:', err.message);
+      }
+    });
+
     // ── Cursor / typing indicators ──
     socket.on('cursor:move', (data) => {
       socket.to(`board:${data.boardId}`).emit('cursor:move', {
@@ -145,6 +303,15 @@ export function setupSocket(io) {
     // ── Disconnect ──
     socket.on('disconnect', () => {
       console.log(`Socket disconnected: ${socket.user.name} (${socket.id})`);
+
+      // Remove from user sockets tracking
+      const uid = socket.user._id.toString();
+      const sockets = userSockets.get(uid);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) userSockets.delete(uid);
+      }
+
       // Clean up presence from all workspaces
       for (const [workspaceId] of workspacePresence) {
         removePresence(socket, workspaceId, io);

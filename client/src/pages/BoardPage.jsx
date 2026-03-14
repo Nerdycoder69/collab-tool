@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useBoardStore } from '../store/boardStore.js';
 import { useSocket } from '../hooks/useSocket.js';
 import { useAuthStore } from '../store/authStore.js';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
 import Column from '../components/Column.jsx';
 import OnlineUsers from '../components/OnlineUsers.jsx';
 import ChatPanel from '../components/ChatPanel.jsx';
+import ActivityPanel from '../components/ActivityPanel.jsx';
 import InviteModal from '../components/InviteModal.jsx';
 
 export default function BoardPage() {
@@ -29,7 +31,10 @@ export default function BoardPage() {
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColTitle, setNewColTitle] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [filterText, setFilterText] = useState('');
+  const [filterLabel, setFilterLabel] = useState('');
 
   useEffect(() => {
     fetchBoard(workspaceId, boardId);
@@ -57,6 +62,42 @@ export default function BoardPage() {
     return () => unsubs.forEach((unsub) => unsub && unsub());
   }, [on, handleRemoteCardCreated, handleRemoteCardUpdated, handleRemoteCardMoved, handleRemoteCardDeleted, setOnlineUsers]);
 
+  // Keyboard shortcuts for board context
+  const shortcutHandlers = useMemo(() => ({
+    'toggle-chat': () => setChatOpen((p) => !p),
+    'toggle-activity': () => setActivityOpen((p) => !p),
+    close: () => {
+      setShowInvite(false);
+      setAddingColumn(false);
+    },
+  }), []);
+
+  useKeyboardShortcuts(shortcutHandlers);
+
+  // Filter cards
+  const filteredCards = useMemo(() => {
+    if (!filterText && !filterLabel) return cards;
+    return cards.filter((c) => {
+      const matchesText =
+        !filterText ||
+        c.title?.toLowerCase().includes(filterText.toLowerCase()) ||
+        c.description?.toLowerCase().includes(filterText.toLowerCase());
+      const matchesLabel =
+        !filterLabel ||
+        c.labels?.some((l) =>
+          l.text?.toLowerCase().includes(filterLabel.toLowerCase())
+        );
+      return matchesText && matchesLabel;
+    });
+  }, [cards, filterText, filterLabel]);
+
+  // Collect all unique labels for the filter dropdown
+  const allLabels = useMemo(() => {
+    const labels = new Set();
+    cards.forEach((c) => c.labels?.forEach((l) => l.text && labels.add(l.text)));
+    return Array.from(labels);
+  }, [cards]);
+
   const handleAddColumn = async (e) => {
     e.preventDefault();
     if (!newColTitle.trim() || !currentBoard) return;
@@ -67,7 +108,6 @@ export default function BoardPage() {
       order: currentBoard.columns.length,
     };
 
-    // This would go through the board update API
     const { api } = await import('../utils/api.js');
     try {
       const { board } = await api.updateBoard(workspaceId, boardId, {
@@ -97,7 +137,7 @@ export default function BoardPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '1rem',
+          marginBottom: '0.75rem',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -119,12 +159,69 @@ export default function BoardPage() {
           </button>
           <button
             className="btn-ghost"
+            onClick={() => setActivityOpen(!activityOpen)}
+            style={{ fontSize: '0.75rem' }}
+          >
+            {activityOpen ? 'Hide Activity' : 'Activity'}
+          </button>
+          <button
+            className="btn-ghost"
             onClick={() => setChatOpen(!chatOpen)}
             style={{ fontSize: '0.75rem' }}
           >
             {chatOpen ? 'Hide Chat' : 'Show Chat'}
           </button>
         </div>
+      </div>
+
+      {/* Filter bar */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '0.5rem',
+          marginBottom: '0.75rem',
+          alignItems: 'center',
+        }}
+      >
+        <input
+          placeholder="Filter cards..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          style={{
+            width: '200px',
+            padding: '0.375rem 0.625rem',
+            fontSize: '0.75rem',
+          }}
+        />
+        {allLabels.length > 0 && (
+          <select
+            value={filterLabel}
+            onChange={(e) => setFilterLabel(e.target.value)}
+            style={{
+              background: 'var(--bg-primary)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              padding: '0.375rem 0.625rem',
+              fontSize: '0.75rem',
+              outline: 'none',
+            }}
+          >
+            <option value="">All labels</option>
+            {allLabels.map((l) => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
+        )}
+        {(filterText || filterLabel) && (
+          <button
+            className="btn-ghost"
+            onClick={() => { setFilterText(''); setFilterLabel(''); }}
+            style={{ fontSize: '0.75rem' }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {showInvite && (
@@ -150,7 +247,7 @@ export default function BoardPage() {
             <Column
               key={column._id}
               column={column}
-              cards={cards
+              cards={filteredCards
                 .filter((c) => c.column?.toString() === column._id?.toString())
                 .sort((a, b) => a.order - b.order)}
               workspaceId={workspaceId}
@@ -207,6 +304,11 @@ export default function BoardPage() {
             )}
           </div>
         </div>
+
+        {/* Activity panel */}
+        {activityOpen && (
+          <ActivityPanel workspaceId={workspaceId} boardId={boardId} />
+        )}
 
         {/* Chat panel */}
         {chatOpen && (
