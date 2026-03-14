@@ -23,27 +23,87 @@ router.get(
   }
 );
 
+// Board templates
+const BOARD_TEMPLATES = {
+  kanban: {
+    name: 'Kanban',
+    description: 'Simple kanban workflow',
+    columns: [
+      { title: 'Backlog', order: 0 },
+      { title: 'To Do', order: 1 },
+      { title: 'In Progress', order: 2 },
+      { title: 'Review', order: 3 },
+      { title: 'Done', order: 4 },
+    ],
+  },
+  sprint: {
+    name: 'Sprint Board',
+    description: 'Agile sprint planning',
+    columns: [
+      { title: 'Sprint Backlog', order: 0 },
+      { title: 'In Development', order: 1 },
+      { title: 'Code Review', order: 2 },
+      { title: 'QA Testing', order: 3 },
+      { title: 'Ready to Deploy', order: 4 },
+      { title: 'Done', order: 5 },
+    ],
+  },
+  roadmap: {
+    name: 'Roadmap',
+    description: 'Product roadmap planning',
+    columns: [
+      { title: 'Ideas', order: 0 },
+      { title: 'Planned', order: 1 },
+      { title: 'In Progress', order: 2 },
+      { title: 'Launched', order: 3 },
+    ],
+  },
+  basic: {
+    name: 'Basic',
+    description: 'Simple three-column board',
+    columns: [
+      { title: 'To Do', order: 0 },
+      { title: 'In Progress', order: 1 },
+      { title: 'Done', order: 2 },
+    ],
+  },
+};
+
+// GET /api/workspaces/:workspaceId/boards/templates
+router.get(
+  '/:workspaceId/boards/templates',
+  authorize('owner', 'editor', 'viewer'),
+  (req, res) => {
+    const templates = Object.entries(BOARD_TEMPLATES).map(([key, t]) => ({
+      id: key,
+      name: t.name,
+      description: t.description,
+      columnCount: t.columns.length,
+      columns: t.columns.map((c) => c.title),
+    }));
+    res.json({ templates });
+  }
+);
+
 // POST /api/workspaces/:workspaceId/boards
 router.post(
   '/:workspaceId/boards',
   authorize('owner', 'editor'),
   async (req, res) => {
     try {
-      const { title } = req.body;
+      const { title, template } = req.body;
 
       if (!title) {
         return res.status(400).json({ error: 'Board title is required' });
       }
 
+      const tmpl = BOARD_TEMPLATES[template] || BOARD_TEMPLATES.basic;
+
       const board = await Board.create({
         title,
         workspace: req.params.workspaceId,
         createdBy: req.user._id,
-        columns: [
-          { title: 'To Do', order: 0 },
-          { title: 'In Progress', order: 1 },
-          { title: 'Done', order: 2 },
-        ],
+        columns: tmpl.columns,
       });
 
       res.status(201).json({ board });

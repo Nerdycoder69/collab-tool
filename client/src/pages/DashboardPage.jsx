@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useBoardStore } from '../store/boardStore.js';
+import { api } from '../utils/api.js';
+
+const TEMPLATE_INFO = {
+  basic: { icon: '\u25a1', color: '#6366f1' },
+  kanban: { icon: '\u2630', color: '#22c55e' },
+  sprint: { icon: '\u26a1', color: '#f59e0b' },
+  roadmap: { icon: '\u279c', color: '#3b82f6' },
+};
 
 export default function DashboardPage() {
   const { workspaces, fetchWorkspaces, createWorkspace, loading } =
@@ -14,6 +22,8 @@ export default function DashboardPage() {
   const [selectedWs, setSelectedWs] = useState(null);
   const [showNewBoard, setShowNewBoard] = useState(false);
   const [boardTitle, setBoardTitle] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('basic');
 
   useEffect(() => {
     fetchWorkspaces();
@@ -22,6 +32,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (selectedWs) {
       fetchBoards(selectedWs._id);
+      // Load templates
+      api.getBoardTemplates(selectedWs._id)
+        .then(({ templates: t }) => setTemplates(t))
+        .catch(() => {});
     }
   }, [selectedWs, fetchBoards]);
 
@@ -37,9 +51,10 @@ export default function DashboardPage() {
   const handleCreateBoard = async (e) => {
     e.preventDefault();
     if (!boardTitle.trim() || !selectedWs) return;
-    const board = await createBoard(selectedWs._id, boardTitle.trim());
+    const board = await createBoard(selectedWs._id, boardTitle.trim(), selectedTemplate);
     setBoardTitle('');
     setShowNewBoard(false);
+    setSelectedTemplate('basic');
     navigate(`/workspace/${selectedWs._id}/board/${board._id}`);
   };
 
@@ -110,28 +125,68 @@ export default function DashboardPage() {
           </div>
 
           {showNewBoard && (
-            <form
-              onSubmit={handleCreateBoard}
+            <div
               style={{
-                display: 'flex',
-                gap: '0.5rem',
                 marginBottom: '1rem',
                 background: 'var(--bg-secondary)',
                 padding: '1rem',
                 borderRadius: 'var(--radius)',
               }}
             >
-              <input
-                placeholder="Board title"
-                value={boardTitle}
-                onChange={(e) => setBoardTitle(e.target.value)}
-                autoFocus
-              />
-              <button className="btn-primary" type="submit">Create</button>
-              <button className="btn-ghost" type="button" onClick={() => setShowNewBoard(false)}>
-                Cancel
-              </button>
-            </form>
+              {/* Template selector */}
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem' }}>
+                  Choose a template
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {templates.map((t) => {
+                    const info = TEMPLATE_INFO[t.id] || TEMPLATE_INFO.basic;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedTemplate(t.id)}
+                        style={{
+                          background: selectedTemplate === t.id ? 'var(--accent)' : 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          border: selectedTemplate === t.id ? '2px solid var(--accent-hover)' : '2px solid var(--border)',
+                          borderRadius: 'var(--radius)',
+                          padding: '0.625rem 0.875rem',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          minWidth: '120px',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.25rem' }}>
+                          <span style={{ color: info.color, fontSize: '0.875rem' }}>{info.icon}</span>
+                          <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{t.name}</span>
+                        </div>
+                        <p style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                          {t.columns.join(' \u2192 ')}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <form
+                onSubmit={handleCreateBoard}
+                style={{ display: 'flex', gap: '0.5rem' }}
+              >
+                <input
+                  placeholder="Board title"
+                  value={boardTitle}
+                  onChange={(e) => setBoardTitle(e.target.value)}
+                  autoFocus
+                />
+                <button className="btn-primary" type="submit">Create</button>
+                <button className="btn-ghost" type="button" onClick={() => { setShowNewBoard(false); setSelectedTemplate('basic'); }}>
+                  Cancel
+                </button>
+              </form>
+            </div>
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>

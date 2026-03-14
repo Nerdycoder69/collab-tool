@@ -30,9 +30,9 @@ export const useBoardStore = create((set, get) => ({
     }
   },
 
-  createBoard: async (workspaceId, title) => {
+  createBoard: async (workspaceId, title, template) => {
     try {
-      const { board } = await api.createBoard(workspaceId, { title });
+      const { board } = await api.createBoard(workspaceId, { title, template });
       set((state) => ({ boards: [...state.boards, board] }));
       return board;
     } catch (err) {

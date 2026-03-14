@@ -41,8 +41,10 @@ export function useSocket(token) {
         socket.disconnect();
         socket = null;
         refCount = 0;
+        socketRef.current = null;
       }
-      socketRef.current = null;
+      // Don't null socketRef if socket is still alive —
+      // other components' cleanup effects need it to emit leave events
     };
   }, [token]);
 

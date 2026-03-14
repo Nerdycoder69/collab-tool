@@ -6,6 +6,30 @@ import CardModal from './CardModal.jsx';
 export default function CardItem({ card, workspaceId, boardId }) {
   const [showModal, setShowModal] = useState(false);
 
+  const openModal = () => {
+    setShowModal(true);
+    // Broadcast presence: viewing this card
+    const socket = getSocket();
+    if (socket) {
+      socket.emit('presence:focus', {
+        boardId,
+        viewing: { type: 'card', id: card._id, title: card.title },
+      });
+    }
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    // Clear presence: back to board view
+    const socket = getSocket();
+    if (socket) {
+      socket.emit('presence:focus', {
+        boardId,
+        viewing: { type: 'board', id: boardId },
+      });
+    }
+  };
+
   const handleDragStart = (e) => {
     e.dataTransfer.setData('text/plain', card._id);
     e.dataTransfer.effectAllowed = 'move';
@@ -25,7 +49,7 @@ export default function CardItem({ card, workspaceId, boardId }) {
       <div
         draggable
         onDragStart={handleDragStart}
-        onClick={() => setShowModal(true)}
+        onClick={openModal}
         style={{
           background: 'var(--bg-card)',
           padding: '0.75rem',
@@ -104,7 +128,7 @@ export default function CardItem({ card, workspaceId, boardId }) {
           card={card}
           workspaceId={workspaceId}
           boardId={boardId}
-          onClose={() => setShowModal(false)}
+          onClose={closeModal}
         />
       )}
     </>
