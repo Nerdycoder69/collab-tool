@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useBoardStore } from '../store/boardStore.js';
 import { getSocket } from '../hooks/useSocket.js';
 import { api } from '../utils/api.js';
@@ -9,6 +9,26 @@ export default function CardModal({ card, workspaceId, boardId, onClose }) {
   const [description, setDescription] = useState(card.description || '');
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const [mentionResults, setMentionResults] = useState([]);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const commentRef = useRef(null);
+
+  // Load workspace members for @mention autocomplete
+  useEffect(() => {
+    async function loadMembers() {
+      try {
+        const { workspace } = await api.getWorkspaceMembers(workspaceId);
+        if (workspace?.members) {
+          setMembers(workspace.members.map((m) => m.user).filter(Boolean));
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadMembers();
+  }, [workspaceId]);
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -36,12 +56,19 @@ export default function CardModal({ card, workspaceId, boardId, onClose }) {
       await deleteCard(workspaceId, boardId, card._id);
       const socket = getSocket();
       if (socket) {
-        socket.emit('card:deleted', { boardId, cardId: card._id });
+        socket.emit('card:deleted', { boardId, cardId: card._id, cardTitle: card.title });
       }
       onClose();
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Parse @mentions from text
+  const extractMentions = (text) => {
+    const matches = text.match(/@(\w+(?:\s\w+)?)/g);
+    if (!matches) return [];
+    return matches.map((m) => m.slice(1));
   };
 
   const handleAddComment = async (e) => {
@@ -51,13 +78,111 @@ export default function CardModal({ card, workspaceId, boardId, onClose }) {
       await api.addComment(workspaceId, boardId, card._id, {
         text: comment.trim(),
       });
+
+      // Emit comment event with mentions for notifications
+      const mentions = extractMentions(comment);
+      const socket = getSocket();
+      if (socket) {
+        socket.emit('card:commented', {
+          boardId,
+          cardId: card._id,
+          cardTitle: card.title,
+          comment: { text: comment.trim() },
+          mentions,
+        });
+      }
+
       setComment('');
+      setMentionQuery(null);
       // Refresh card data
       const { fetchBoard } = useBoardStore.getState();
       fetchBoard(workspaceId, boardId);
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleCommentChange = (e) => {
+    const val = e.target.value;
+    setComment(val);
+
+    // Detect @mention in progress
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = val.substring(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+
+    if (atMatch) {
+      const q = atMatch[1].toLowerCase();
+      setMentionQuery(q);
+      setMentionResults(
+        members.filter(
+          (m) => m.name && m.name.toLowerCase().includes(q)
+        ).slice(0, 5)
+      );
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+      setMentionResults([]);
+    }
+  };
+
+  const insertMention = (member) => {
+    const input = commentRef.current;
+    if (!input) return;
+
+    const cursorPos = input.selectionStart;
+    const textBeforeCursor = comment.substring(0, cursorPos);
+    const textAfterCursor = comment.substring(cursorPos);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+
+    const newText =
+      textBeforeCursor.substring(0, atIndex) +
+      `@${member.name} ` +
+      textAfterCursor;
+
+    setComment(newText);
+    setMentionQuery(null);
+    setMentionResults([]);
+
+    // Refocus input
+    setTimeout(() => {
+      input.focus();
+      const newPos = atIndex + member.name.length + 2;
+      input.setSelectionRange(newPos, newPos);
+    }, 0);
+  };
+
+  const handleCommentKeyDown = (e) => {
+    if (mentionResults.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((prev) => Math.min(prev + 1, mentionResults.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((prev) => Math.max(prev - 1, 0));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertMention(mentionResults[mentionIndex]);
+      } else if (e.key === 'Escape') {
+        setMentionQuery(null);
+        setMentionResults([]);
+      }
+    }
+  };
+
+  // Render comment text with highlighted @mentions
+  const renderCommentText = (text) => {
+    const parts = text.split(/(@\w+(?:\s\w+)?)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('@')) {
+        return (
+          <span key={i} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
   };
 
   return (
@@ -147,16 +272,79 @@ export default function CardModal({ card, workspaceId, boardId, onClose }) {
                     {new Date(c.createdAt).toLocaleDateString()}
                   </span>
                 </div>
-                <p style={{ fontSize: '0.8125rem' }}>{c.text}</p>
+                <p style={{ fontSize: '0.8125rem' }}>{renderCommentText(c.text)}</p>
               </div>
             ))}
 
-            <form onSubmit={handleAddComment} style={{ display: 'flex', gap: '0.5rem' }}>
-              <input
-                placeholder="Add a comment..."
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-              />
+            <form
+              onSubmit={handleAddComment}
+              style={{ display: 'flex', gap: '0.5rem', position: 'relative' }}
+            >
+              <div style={{ flex: 1, position: 'relative' }}>
+                <input
+                  ref={commentRef}
+                  placeholder="Add a comment... Use @name to mention"
+                  value={comment}
+                  onChange={handleCommentChange}
+                  onKeyDown={handleCommentKeyDown}
+                />
+
+                {/* @mention autocomplete dropdown */}
+                {mentionResults.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: '100%',
+                      left: 0,
+                      width: '100%',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      boxShadow: '0 -4px 12px rgba(0,0,0,0.3)',
+                      marginBottom: '4px',
+                      overflow: 'hidden',
+                      zIndex: 10,
+                    }}
+                  >
+                    {mentionResults.map((m, i) => (
+                      <div
+                        key={m._id}
+                        onClick={() => insertMention(m)}
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          cursor: 'pointer',
+                          background: i === mentionIndex ? 'var(--accent)' : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          fontSize: '0.8125rem',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            background: i === mentionIndex ? 'rgba(255,255,255,0.2)' : 'var(--accent)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.625rem',
+                            fontWeight: 700,
+                            color: 'white',
+                          }}
+                        >
+                          {m.name?.charAt(0).toUpperCase()}
+                        </div>
+                        <span>{m.name}</span>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.6875rem', marginLeft: 'auto' }}>
+                          {m.email}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button className="btn-primary" type="submit" style={{ whiteSpace: 'nowrap' }}>
                 Post
               </button>

@@ -48,13 +48,15 @@ export default function Column({ column, cards, workspaceId, boardId }) {
     const cardId = e.dataTransfer.getData('text/plain');
     if (!cardId) return;
 
-    const { moveCard } = useBoardStore.getState();
+    const { moveCard, cards: allCards } = useBoardStore.getState();
+    const movingCard = allCards.find((c) => c._id === cardId);
+    const fromColumn = movingCard?.column;
     try {
       const card = await moveCard(workspaceId, boardId, cardId, column._id, cards.length);
 
       const socket = getSocket();
       if (socket) {
-        socket.emit('card:moved', { boardId, card });
+        socket.emit('card:moved', { boardId, card, fromColumn });
       }
     } catch (err) {
       console.error(err);

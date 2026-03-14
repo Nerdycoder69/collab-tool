@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 const SOCKET_URL = 'http://localhost:3001';
 
 let socket = null;
+let refCount = 0;
 
 export function getSocket() {
   return socket;
@@ -15,24 +16,32 @@ export function useSocket(token) {
   useEffect(() => {
     if (!token) return;
 
-    socket = io(SOCKET_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
-    });
+    refCount++;
+
+    if (!socket || socket.disconnected) {
+      socket = io(SOCKET_URL, {
+        auth: { token },
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        console.log('Socket connected:', socket.id);
+      });
+
+      socket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err.message);
+      });
+    }
 
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      console.log('Socket connected:', socket.id);
-    });
-
-    socket.on('connect_error', (err) => {
-      console.error('Socket connection error:', err.message);
-    });
-
     return () => {
-      socket.disconnect();
-      socket = null;
+      refCount--;
+      if (refCount <= 0 && socket) {
+        socket.disconnect();
+        socket = null;
+        refCount = 0;
+      }
       socketRef.current = null;
     };
   }, [token]);
@@ -44,12 +53,13 @@ export function useSocket(token) {
   }, []);
 
   const on = useCallback((event, handler) => {
-    if (socketRef.current) {
-      socketRef.current.on(event, handler);
+    const s = socketRef.current;
+    if (s) {
+      s.on(event, handler);
     }
     return () => {
-      if (socketRef.current) {
-        socketRef.current.off(event, handler);
+      if (s) {
+        s.off(event, handler);
       }
     };
   }, []);
