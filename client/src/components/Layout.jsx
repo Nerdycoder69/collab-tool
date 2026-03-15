@@ -5,9 +5,11 @@ import NotificationBell from './NotificationBell.jsx';
 import SearchModal from './SearchModal.jsx';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp.jsx';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts.js';
+import { useTheme } from '../hooks/useTheme.js';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
+  const { theme, toggleTheme } = useTheme();
   const [showSearch, setShowSearch] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -63,6 +65,15 @@ export default function Layout() {
             >
               /
             </kbd>
+          </button>
+
+          <button
+            className="btn-ghost"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            style={{ fontSize: '1rem', padding: '0.375rem 0.5rem' }}
+          >
+            {theme === 'dark' ? '\u2600' : '\u263D'}
           </button>
 
           <NotificationBell />
