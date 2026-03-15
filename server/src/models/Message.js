@@ -12,11 +12,14 @@ const messageSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
-    text: {
+    // Encrypted message fields (E2E encrypted on client)
+    ciphertext: {
       type: String,
-      required: [true, 'Message text is required'],
-      maxlength: 2000,
-      trim: true,
+      required: true,
+    },
+    iv: {
+      type: String,
+      required: true,
     },
   },
   { timestamps: true }

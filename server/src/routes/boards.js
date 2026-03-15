@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import Board from '../models/Board.js';
 import Card from '../models/Card.js';
 import { authenticate, authorize } from '../middleware/auth.js';
@@ -99,11 +100,15 @@ router.post(
 
       const tmpl = BOARD_TEMPLATES[template] || BOARD_TEMPLATES.basic;
 
+      // Generate a random AES-256 key for E2E message encryption
+      const encryptionKey = crypto.randomBytes(32).toString('base64');
+
       const board = await Board.create({
         title,
         workspace: req.params.workspaceId,
         createdBy: req.user._id,
         columns: tmpl.columns,
+        encryptionKey,
       });
 
       res.status(201).json({ board });
@@ -126,6 +131,12 @@ router.get(
 
       if (!board) {
         return res.status(404).json({ error: 'Board not found' });
+      }
+
+      // Backfill encryption key for boards created before E2E was added
+      if (!board.encryptionKey) {
+        board.encryptionKey = crypto.randomBytes(32).toString('base64');
+        await board.save();
       }
 
       const cards = await Card.find({ board: board._id })
