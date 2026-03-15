@@ -213,16 +213,18 @@ export function setupSocket(io) {
       socket.to(`board:${data.boardId}`).emit('board:updated', data);
     });
 
-    // ── Chat messages ──
+    // ── Chat messages (E2E encrypted) ──
     socket.on('chat:send', async (data) => {
       try {
-        const { boardId, text } = data;
-        if (!boardId || !text?.trim()) return;
+        const { boardId, ciphertext, iv } = data;
+        if (!boardId || !ciphertext || !iv) return;
 
+        // Store encrypted — server never sees plaintext
         const message = await Message.create({
           board: boardId,
           author: socket.user._id,
-          text: text.trim(),
+          ciphertext,
+          iv,
         });
 
         await message.populate('author', 'name email avatar');

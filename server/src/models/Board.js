@@ -36,6 +36,9 @@ const boardSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    encryptionKey: {
+      type: String,
+    },
   },
   { timestamps: true }
 );

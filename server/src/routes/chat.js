@@ -25,7 +25,7 @@ router.get(
         .limit(50)
         .populate('author', 'name email avatar');
 
-      // Return in chronological order
+      // Return in chronological order (still encrypted — client decrypts)
       res.json({ messages: messages.reverse() });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -33,22 +33,23 @@ router.get(
   }
 );
 
-// POST /api/workspaces/:workspaceId/boards/:boardId/messages — send a message
+// POST /api/workspaces/:workspaceId/boards/:boardId/messages — send encrypted message
 router.post(
   '/:workspaceId/boards/:boardId/messages',
   authorize('owner', 'editor', 'viewer'),
   async (req, res) => {
     try {
-      const { text } = req.body;
+      const { ciphertext, iv } = req.body;
 
-      if (!text || !text.trim()) {
-        return res.status(400).json({ error: 'Message text is required' });
+      if (!ciphertext || !iv) {
+        return res.status(400).json({ error: 'Encrypted message data is required' });
       }
 
       const message = await Message.create({
         board: req.params.boardId,
         author: req.user._id,
-        text: text.trim(),
+        ciphertext,
+        iv,
       });
 
       await message.populate('author', 'name email avatar');

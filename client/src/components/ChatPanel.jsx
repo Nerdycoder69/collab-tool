@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../utils/api.js';
+import { encrypt, decrypt } from '../utils/crypto.js';
 import { useSocket } from '../hooks/useSocket.js';
 import { useAuthStore } from '../store/authStore.js';
+import { useBoardStore } from '../store/boardStore.js';
 
 export default function ChatPanel({ workspaceId, boardId }) {
   const [messages, setMessages] = useState([]);
@@ -13,31 +15,58 @@ export default function ChatPanel({ workspaceId, boardId }) {
   const { token, user } = useAuthStore();
   const { emit, on } = useSocket(token);
 
-  // Load initial messages
+  // Get the board's encryption key
+  const encryptionKey = useBoardStore((s) => s.currentBoard?.encryptionKey);
+
+  // Decrypt a single message
+  const decryptMessage = useCallback(
+    async (msg) => {
+      if (!encryptionKey || !msg.ciphertext || !msg.iv) {
+        // Legacy unencrypted message fallback
+        return { ...msg, text: msg.text || '[encrypted]' };
+      }
+      try {
+        const plaintext = await decrypt(msg.ciphertext, msg.iv, encryptionKey);
+        return { ...msg, text: plaintext };
+      } catch {
+        return { ...msg, text: '[decryption failed]' };
+      }
+    },
+    [encryptionKey]
+  );
+
+  // Load and decrypt initial messages
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const { messages: msgs } = await api.getMessages(workspaceId, boardId);
+        if (cancelled) return;
+        // Decrypt all messages
+        const decrypted = await Promise.all(msgs.map(decryptMessage));
         if (!cancelled) {
-          setMessages(msgs);
+          setMessages(decrypted);
           setLoading(false);
         }
       } catch {
         if (!cancelled) setLoading(false);
       }
     }
-    load();
+    if (encryptionKey) load();
     return () => { cancelled = true; };
-  }, [workspaceId, boardId]);
+  }, [workspaceId, boardId, encryptionKey, decryptMessage]);
 
-  // Listen for real-time messages
-  const handleNewMessage = useCallback((data) => {
-    setMessages((prev) => {
-      if (prev.find((m) => m._id === data.message._id)) return prev;
-      return [...prev, data.message];
-    });
-  }, []);
+  // Listen for real-time messages and decrypt
+  const handleNewMessage = useCallback(
+    async (data) => {
+      const decrypted = await decryptMessage(data.message);
+      setMessages((prev) => {
+        if (prev.find((m) => m._id === decrypted._id)) return prev;
+        return [...prev, decrypted];
+      });
+    },
+    [decryptMessage]
+  );
 
   const handleTyping = useCallback((data) => {
     if (data.user._id === user?._id) return;
@@ -59,10 +88,13 @@ export default function ChatPanel({ workspaceId, boardId }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
-    emit('chat:send', { boardId, text: text.trim() });
+    if (!text.trim() || !encryptionKey) return;
+
+    // Encrypt on the client before sending
+    const { ciphertext, iv } = await encrypt(text.trim(), encryptionKey);
+    emit('chat:send', { boardId, ciphertext, iv });
     setText('');
   };
 
@@ -94,9 +126,16 @@ export default function ChatPanel({ workspaceId, boardId }) {
           borderBottom: '1px solid var(--border)',
           fontWeight: 600,
           fontSize: '0.875rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
         }}
       >
+        <span>{'\u{1F512}'}</span>
         Board Chat
+        <span style={{ fontSize: '0.625rem', color: 'var(--success)', fontWeight: 400 }}>
+          E2E Encrypted
+        </span>
       </div>
 
       {/* Messages */}
@@ -212,7 +251,7 @@ export default function ChatPanel({ workspaceId, boardId }) {
           onChange={handleInputChange}
           style={{ flex: 1 }}
         />
-        <button className="btn-primary" type="submit" disabled={!text.trim()}>
+        <button className="btn-primary" type="submit" disabled={!text.trim() || !encryptionKey}>
           Send
         </button>
       </form>
