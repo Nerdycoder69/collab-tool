@@ -5,6 +5,7 @@ import Board from '../models/Board.js';
 import Message from '../models/Message.js';
 import Activity from '../models/Activity.js';
 import Notification from '../models/Notification.js';
+import { fireWebhooks } from '../utils/webhookTrigger.js';
 
 // Track online users per workspace: Map<workspaceId, Map<socketId, user>>
 const workspacePresence = new Map();
@@ -120,6 +121,18 @@ export function setupSocket(io) {
           });
           await activity.populate('user', 'name email avatar');
           io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+
+          // Fire card:created webhooks
+          fireWebhooks({
+            event: 'card:created',
+            workspaceId: board.workspace,
+            boardId: board._id,
+            payload: {
+              card: { _id: data.card?._id, title: data.card?.title },
+              board: { _id: board._id, title: board.title },
+              user: { _id: socket.user._id, name: socket.user.name },
+            },
+          });
         }
       } catch (err) {
         console.error('Activity log error:', err.message);
@@ -175,6 +188,26 @@ export function setupSocket(io) {
           });
           await activity.populate('user', 'name email avatar');
           io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+
+          // Fire webhooks when card moves to a "Done" column
+          const toColTitle = toCol?.title?.toLowerCase() || '';
+          if (toColTitle === 'done' || toColTitle === 'launched' || toColTitle === 'ready to deploy') {
+            fireWebhooks({
+              event: 'card:moved:done',
+              workspaceId: board.workspace,
+              boardId: board._id,
+              payload: {
+                card: {
+                  _id: data.card?._id,
+                  title: data.card?.title,
+                },
+                board: { _id: board._id, title: board.title },
+                fromColumn: fromCol?.title,
+                toColumn: toCol?.title,
+                user: { _id: socket.user._id, name: socket.user.name },
+              },
+            });
+          }
         }
       } catch (err) {
         console.error('Activity log error:', err.message);
@@ -196,6 +229,18 @@ export function setupSocket(io) {
           });
           await activity.populate('user', 'name email avatar');
           io.to(`workspace:${board.workspace}`).emit('activity:new', { activity });
+
+          // Fire card:deleted webhooks
+          fireWebhooks({
+            event: 'card:deleted',
+            workspaceId: board.workspace,
+            boardId: board._id,
+            payload: {
+              card: { _id: data.cardId, title: data.cardTitle },
+              board: { _id: board._id, title: board.title },
+              user: { _id: socket.user._id, name: socket.user.name },
+            },
+          });
         }
       } catch (err) {
         console.error('Activity log error:', err.message);

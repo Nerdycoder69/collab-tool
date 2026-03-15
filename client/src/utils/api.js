@@ -123,6 +123,16 @@ export const api = {
     return request(url);
   },
 
+  // Webhooks
+  getWebhooks: (workspaceId) =>
+    request(`/workspaces/${workspaceId}/webhooks`),
+  createWebhook: (workspaceId, body) =>
+    request(`/workspaces/${workspaceId}/webhooks`, { method: 'POST', body }),
+  updateWebhook: (workspaceId, webhookId, body) =>
+    request(`/workspaces/${workspaceId}/webhooks/${webhookId}`, { method: 'PATCH', body }),
+  deleteWebhook: (workspaceId, webhookId) =>
+    request(`/workspaces/${workspaceId}/webhooks/${webhookId}`, { method: 'DELETE' }),
+
   // Members lookup
   getWorkspaceMembers: (workspaceId) =>
     request(`/workspaces/${workspaceId}`),

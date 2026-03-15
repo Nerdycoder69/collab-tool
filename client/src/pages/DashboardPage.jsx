@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useWorkspaceStore } from '../store/workspaceStore.js';
 import { useBoardStore } from '../store/boardStore.js';
 import { api } from '../utils/api.js';
+import WebhookSettings from '../components/WebhookSettings.jsx';
 
 const TEMPLATE_INFO = {
   basic: { icon: '\u25a1', color: '#6366f1' },
@@ -24,6 +25,7 @@ export default function DashboardPage() {
   const [boardTitle, setBoardTitle] = useState('');
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('basic');
+  const [showWebhooks, setShowWebhooks] = useState(false);
 
   useEffect(() => {
     fetchWorkspaces();
@@ -119,9 +121,18 @@ export default function DashboardPage() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h2 style={{ fontSize: '1.125rem' }}>Boards in {selectedWs.name}</h2>
-            <button className="btn-primary" onClick={() => setShowNewBoard(true)}>
-              + New Board
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowWebhooks(true)}
+                style={{ fontSize: '0.8125rem' }}
+              >
+                Webhooks
+              </button>
+              <button className="btn-primary" onClick={() => setShowNewBoard(true)}>
+                + New Board
+              </button>
+            </div>
           </div>
 
           {showNewBoard && (
@@ -217,6 +228,10 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+      )}
+
+      {showWebhooks && selectedWs && (
+        <WebhookSettings workspaceId={selectedWs._id} onClose={() => setShowWebhooks(false)} />
       )}
     </div>
   );
